@@ -14,7 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """PyTorch OpenAI GPT-2 model."""
-import glob
 import os
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
@@ -58,30 +57,6 @@ GPT2_PRETRAINED_MODEL_ARCHIVE_LIST = [
     "distilgpt2",
     # See all GPT-2 models at https://huggingface.co/models?filter=gpt2 or https://huggingface.co/openai-community
 ]
-
-import os
-import re
-import pickle
-def get_incremental_filename(directory, base_name, extension):
-    # List all files in the directory
-    files = os.listdir(directory)
-
-    # Regular expression to match filenames in the pattern base_name_number.extension
-    pattern = re.compile(rf'{base_name}_(\d+)\.{extension}')
-
-    # Find all files that match the pattern and extract the numbers
-    numbers = [int(m.group(1)) for f in files if (m := pattern.match(f))]
-
-    # If no such files exist, start with 1
-    if numbers:
-        counter = max(numbers) + 1
-    else:
-        counter = 1
-
-    # Construct the new file name
-    file_name = f"{base_name}_{counter}.{extension}"
-
-    return os.path.join(directory, file_name)
 
 def load_tf_weights_in_gpt2(model, config, gpt2_checkpoint_path):
     """Load tf checkpoints in a pytorch model"""
@@ -199,8 +174,6 @@ class Attention(nn.Module):
         self.pruned_heads = self.pruned_heads.union(heads)
 
     def _attn(self, q, k, v, attention_mask=None, head_mask=None, output_attentions=False, is_final=False, is_estimation=False):
-        # dump q, k, v, attention_mask, head_mask in pickle
-
         w = torch.matmul(q, k)
 
         if self.scale:
@@ -214,19 +187,6 @@ class Attention(nn.Module):
                 w = torch.where(mask.bool(), w, self.masked_bias.to(w.dtype))
                 # self.rl_mask = self.rl_mask.to(w.device)
                 # w = w + self.rl_mask
-                # dump mask
-                # import pickle
-                # folders = [f for f in glob.glob(os.path.join("E:\\toyota\\latent", '*/'))]
-                # # Get the newest folder by checking the modification time
-                # newest_folder = max(folders, key=os.path.getmtime)
-                # for i in range(100):
-                #     name = f"mask_{i}"
-                #     if os.path.exists(f'{newest_folder}/{name}.pkl'):
-                #         continue
-                #     else:
-                #         break
-                # with open(f'{newest_folder}/{name}.pkl', 'wb') as f:
-                #     pickle.dump(mask, f)
             except Exception as e:
                 print(e)
                 print(mask.shape)
@@ -239,19 +199,8 @@ class Attention(nn.Module):
         if attention_mask is not None:
             # Apply the attention mask
             w = w + attention_mask
-        w_array = w.cpu().detach().numpy()
         # w = torch.where(w <= -10000, w, 0)
         w = nn.Softmax(dim=-1)(w)
-
-        # # dump w in pickle
-        # directory = 'E:\\toyota\\latent\\toyota_base'
-        # base_name = 'attention_score'
-        # extension = 'pkl'
-        # file_name = get_incremental_filename(directory, base_name, extension)
-        # # Dump the data to the file using pickle
-        # with open(file_name, 'wb') as f:
-        #     w_array = w.cpu().detach().numpy()
-        #     pickle.dump(w_array, f)
 
         if head_mask is not None:
             w = w * head_mask
@@ -305,23 +254,6 @@ class Attention(nn.Module):
         query = self.split_heads(query)
         key = self.split_heads(key, k=True)
         value = self.split_heads(value)
-        # dump query, key, value, attention_mask, head_mask in pickle
-        folders = [f for f in glob.glob(os.path.join("E:\\toyota\\latent", '*/'))]
-        # Get the newest folder by checking the modification time
-        # newest_folder = "E:\\toyota\\latent\\toyota_base"#max(folders, key=os.path.getmtime)
-        # for i in range(100):
-        #     if os.path.exists(f'{newest_folder}/query_{i}_{attention_mask.cpu().numpy().sum()}.pkl'):
-        #         continue
-        #     else:
-        #         break
-        # with open(f'{newest_folder}/query_{i}_{attention_mask.cpu().numpy().sum()}.pkl', 'wb') as f:
-        #     pickle.dump(query, f)
-        # with open(f'{newest_folder}/key_{i}_{attention_mask.cpu().numpy().sum()}.pkl', 'wb') as f:
-        #     pickle.dump(key, f)
-        # with open(f'{newest_folder}/value_{i}_{attention_mask.cpu().numpy().sum()}.pkl', 'wb') as f:
-        #     pickle.dump(value, f)
-        # with open(f'{newest_folder}/attention_mask_{i}_{attention_mask.cpu().numpy().sum()}.pkl', 'wb') as f:
-        #     pickle.dump(attention_mask, f)
 
         if layer_past is not None:
             past_key, past_value = layer_past[0].transpose(-2, -1), layer_past[1]  # transpose back cf below

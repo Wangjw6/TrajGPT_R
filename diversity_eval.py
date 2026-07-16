@@ -16,8 +16,6 @@ import numpy as np
 from scipy.cluster.hierarchy import linkage, dendrogram, fcluster
 import math
 import editdistance
-
-Inh_df = pd.read_csv('E:/toyota/network/small.csv',  encoding='shift_jis')
 # Define boundaries and grid step sizes
 max_lat = 35.91521267361111
 min_lat = 35.5
@@ -28,19 +26,6 @@ min_lon = 139.0001801215278
 lat_step = 4 / 111  # ~0.009 degrees
 central_lat = (max_lat + min_lat) / 2
 lon_step = 4 / (111 * math.cos(math.radians(central_lat)))  # Adjust for latitude
-import pickle
-
-with open(f"E:\\toyota\\offline_data_hub\\data_2m\\conn_dictS.pkl", 'rb') as file:
-    links = pickle.load(file)
-link_to_id = {}
-for k, v in links.items():
-    if k not in link_to_id:
-        link_to_id[k] = len(link_to_id)
-    for c in v:
-        if c not in link_to_id:
-            link_to_id[c] = len(link_to_id)
-id_to_link = {v: k for k, v in link_to_id.items()}
-
 # Function to find grid index
 def find_grid_index(lat, lon, min_lat, min_lon, lat_step, lon_step):
     if lat < min_lat or lat > max_lat or lon < min_lon or lon > max_lon:

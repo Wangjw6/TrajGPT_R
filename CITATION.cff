@@ -1,0 +1,27 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite the associated paper."
+title: "TrajGPT-R: Generating urban mobility trajectory with reinforcement Learning-Enhanced generative Pre-trained transformer"
+authors:
+  - family-names: Wang
+    given-names: Jiawei
+  - family-names: Yang
+    given-names: Chuang
+  - family-names: Yong
+    given-names: Jiawei
+  - family-names: Xu
+    given-names: Xiaohang
+  - family-names: Wang
+    given-names: Hongjun
+  - family-names: Koshizuka
+    given-names: Noboru
+  - family-names: Fukushima
+    given-names: Shintaro
+  - family-names: Shibasaki
+    given-names: Ryosuke
+  - family-names: Jiang
+    given-names: Renhe
+doi: 10.1016/j.trc.2026.105862
+journal: "Transportation Research Part C"
+volume: 192
+year: 2026
+license: "NOASSERTION"

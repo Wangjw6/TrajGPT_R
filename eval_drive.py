@@ -9,7 +9,6 @@ import scipy.stats
 from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 from Env.tdrive import *
 import warnings
-from diversity_eval import *
 
 # Suppress specific warnings related to BLEU score calculation
 warnings.filterwarnings("ignore", category=UserWarning, module='nltk.translate.bleu_score')
@@ -349,9 +348,10 @@ def eval_generation_agg(model, trajectories, link_to_id, state_dim, act_dim, dev
             finished += 1
         gen_trajectories.append(gen_trajectory)
 
-    with open(f'./outputs/{model_name}_gen_drive.pk', 'wb') as f:
+    os.makedirs('./results', exist_ok=True)
+    with open(f'./results/{model_name}_gen_drive.pk', 'wb') as f:
         pickle.dump(gen_trajectories, f)
-    with open(f'./outputs/{model_name}_tar_drive.pk', 'wb') as f:
+    with open(f'./results/{model_name}_tar_drive.pk', 'wb') as f:
         pickle.dump(real_trajectories, f)
     print(f'time: {time.localtime()}')
     print(f'sum_reward: {sum_reward}')

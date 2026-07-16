@@ -1,9 +1,6 @@
-import numpy as np
 import torch
-import torch.nn.functional as F
 from Proposed.models.training.trainer import Trainer
 import torch.nn as nn
-import matplotlib.pyplot as plt
 
 
 class SequenceTrainer(Trainer):
@@ -59,8 +56,8 @@ class SequenceTrainer(Trainer):
         final_loss.backward()
         norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), 5.)
         self.optimizer.step()
-        torch.cuda.synchronize()
+        if torch.cuda.is_available() and any(param.is_cuda for param in self.model.parameters()):
+            torch.cuda.synchronize()
         if loss2 != 0:
             return loss.detach().cpu().item(), norm.detach().cpu().item(), loss2.detach().cpu().item()
         return loss.detach().cpu().item(), norm.detach().cpu().item(), 0
-

@@ -1,21 +1,19 @@
 __pycache__/
 *.py[cod]
 *.pyo
-*.pyd
-*.DS_Store
-.env
-.venv/
-*.log
-
-# IDE/project files
+.ipynb_checkpoints/
 .idea/
-.vscode/
-Proposed/.idea/
 
-# Virtual environments
-Env/__pycache__/
-Env/*.pyc
+results/
+outputs/
+saved_models/
+save_preference/
+*.pt
+*.pth
 
-# Local datasets not stored in git
-offline_data_hub/opendata/data_to_unzip/
-offline_data_hub/opendata/data_to_unzip.zip
+# Large datasets and archives should be released separately with clear licenses.
+offline_data_hub/
+*.zip
+
+# Local paper copy. Cite the paper in README/CITATION instead of committing the PDF.
+1-s2.0-S0968090X26003499-main.pdf

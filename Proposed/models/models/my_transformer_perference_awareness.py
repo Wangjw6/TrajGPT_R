@@ -4,6 +4,7 @@ import transformers
 from Proposed.models.models.model import TrajectoryModel
 from Proposed.models.models.trajectory_gpt2 import GPT2Model
 from Proposed.models.models.ft_loss_baseline import *
+from trajgpt_config import get_dataset_spec
 import torch.nn.functional as F
 
 
@@ -33,6 +34,7 @@ class My_Transformer_preference_awareness(TrajectoryModel):
     ):
         super().__init__(state_dim, act_dim, max_length=max_length)
         self.env = env
+        self.dataset_spec = get_dataset_spec(env)
         torch.manual_seed(6144)
         self.hidden_size = hidden_size
         self.device = kwargs['device']
@@ -45,6 +47,7 @@ class My_Transformer_preference_awareness(TrajectoryModel):
         self.is_usr = False
         if kwargs['usr'] == "all":
             self.is_usr = True
+        spec = self.dataset_spec
         if env == "toyota":
             self.transformer = GPT2Model(config)
             self.od_transformer = GPT2Model(config)
@@ -58,11 +61,11 @@ class My_Transformer_preference_awareness(TrajectoryModel):
 
             self.embed_action = torch.nn.Linear(self.act_dim, hidden_size)
 
-            self.embed_link = nn.Embedding(262144, hidden_size)
-            self.embed_o = nn.Embedding(262144, hidden_size)
-            self.embed_d = nn.Embedding(262144, hidden_size)
-            self.embed_speed = nn.Embedding(120, hidden_size)  # torch.nn.Linear(1, hidden_size)
-            self.embed_departure = nn.Embedding(144, hidden_size)
+            self.embed_link = nn.Embedding(spec.spatial_vocab_size, hidden_size)
+            self.embed_o = nn.Embedding(spec.spatial_vocab_size, hidden_size)
+            self.embed_d = nn.Embedding(spec.spatial_vocab_size, hidden_size)
+            self.embed_speed = nn.Embedding(spec.speed_bins, hidden_size)
+            self.embed_departure = nn.Embedding(spec.departure_bins, hidden_size)
             self.embed_state = torch.nn.Linear(hidden_size * 5, hidden_size)
             self.embed_ln = nn.LayerNorm(hidden_size)
 
@@ -73,7 +76,7 @@ class My_Transformer_preference_awareness(TrajectoryModel):
                   ))
             if kwargs['usr'] == "all":
                 self.is_usr = True
-                self.embed_usr = nn.Embedding(40000, hidden_size)
+                self.embed_usr = nn.Embedding(spec.user_vocab_size, hidden_size)
                 self.reasoning = nn.Linear(hidden_size, hidden_size)
             self.predict_return = torch.nn.Linear(hidden_size, 1)
         if env == "tdrive":
@@ -87,10 +90,10 @@ class My_Transformer_preference_awareness(TrajectoryModel):
             self.embed_return = torch.nn.Linear(1, hidden_size)
 
             self.embed_action = torch.nn.Linear(self.act_dim, hidden_size)
-            self.embed_link = nn.Embedding(16384, hidden_size)
-            self.embed_o = nn.Embedding(16384, hidden_size)
-            self.embed_d = nn.Embedding(16384, hidden_size)
-            self.embed_departure = nn.Embedding(144, hidden_size)
+            self.embed_link = nn.Embedding(spec.spatial_vocab_size, hidden_size)
+            self.embed_o = nn.Embedding(spec.spatial_vocab_size, hidden_size)
+            self.embed_d = nn.Embedding(spec.spatial_vocab_size, hidden_size)
+            self.embed_departure = nn.Embedding(spec.departure_bins, hidden_size)
             self.embed_state = torch.nn.Linear(hidden_size * 4, hidden_size)
             self.embed_ln = nn.LayerNorm(hidden_size)
 
@@ -102,7 +105,7 @@ class My_Transformer_preference_awareness(TrajectoryModel):
             self.predict_return = torch.nn.Linear(hidden_size, 1)
             if kwargs['usr'] == "all":
                 self.is_usr = True
-                self.embed_usr = nn.Embedding(10000, hidden_size)
+                self.embed_usr = nn.Embedding(spec.user_vocab_size, hidden_size)
                 self.reasoning = nn.Linear(hidden_size, hidden_size)
             self.hidden_size = hidden_size
 
@@ -117,10 +120,10 @@ class My_Transformer_preference_awareness(TrajectoryModel):
             self.embed_return = torch.nn.Linear(1, hidden_size)
 
             self.embed_action = torch.nn.Linear(self.act_dim, hidden_size)
-            self.embed_link = nn.Embedding(5524, hidden_size)
-            self.embed_o = nn.Embedding(5524, hidden_size)
-            self.embed_d = nn.Embedding(5524, hidden_size)
-            self.embed_departure = nn.Embedding(144, hidden_size)
+            self.embed_link = nn.Embedding(spec.spatial_vocab_size, hidden_size)
+            self.embed_o = nn.Embedding(spec.spatial_vocab_size, hidden_size)
+            self.embed_d = nn.Embedding(spec.spatial_vocab_size, hidden_size)
+            self.embed_departure = nn.Embedding(spec.departure_bins, hidden_size)
             self.embed_state = torch.nn.Linear(hidden_size * 4, hidden_size)
             self.embed_ln = nn.LayerNorm(hidden_size)
 
@@ -135,12 +138,14 @@ class My_Transformer_preference_awareness(TrajectoryModel):
             # self.preference_token_embedding = torch.zeros(1, 1, self.hidden_size)
             if kwargs['usr'] == "all":
                 self.is_usr = True
-                self.embed_usr = nn.Embedding(512, hidden_size)
+                self.embed_usr = nn.Embedding(spec.user_vocab_size, hidden_size)
                 self.reasoning = nn.Linear(hidden_size, hidden_size)
 
         self.ref_model = None
         # self.preference_embedding = nn.Parameter(torch.zeros(1, 1, self.hidden_size))
         self.adaptive = False
+        if not hasattr(self, 'counts_tensor'):
+            self.counts_tensor = None
         self.alpha = torch.tensor(0.01, requires_grad=False, device=kwargs['device'])  # .exp()
 
         self.scalar_head = layer_init(
@@ -206,7 +211,7 @@ class My_Transformer_preference_awareness(TrajectoryModel):
                 state_embeddings = state_embeddings + embed_usr
             actions = actions.to(torch.int64)  # Converting to a tensor of type Long (int64)
             one_hot_encoded = F.one_hot(actions, num_classes=self.act_dim)
-            action_embeddings = self.embed_action(one_hot_encoded.to(torch.float32)).squeeze()
+            action_embeddings = self.embed_action(one_hot_encoded.to(torch.float32)).squeeze(-2)
             returns_embeddings = self.embed_return(returns_to_go)
             time_embeddings = self.embed_timestep(timesteps)
 
@@ -231,7 +236,7 @@ class My_Transformer_preference_awareness(TrajectoryModel):
                 preference = self.reasoning(embed_usr + embed_o + embed_d + embed_depart)
             actions = actions.to(torch.int64)  # Converting to a tensor of type Long (int64)
             one_hot_encoded = F.one_hot(actions, num_classes=self.act_dim)
-            action_embeddings = self.embed_action(one_hot_encoded.to(torch.float32)).squeeze()
+            action_embeddings = self.embed_action(one_hot_encoded.to(torch.float32)).squeeze(-2)
             returns_embeddings = self.embed_return(returns_to_go)
             time_embeddings = self.embed_timestep(timesteps)
 
@@ -255,7 +260,7 @@ class My_Transformer_preference_awareness(TrajectoryModel):
                 preference = self.reasoning(embed_usr + embed_o + embed_d + embed_depart)
             actions = actions.to(torch.int64)  # Converting to a tensor of type Long (int64)
             one_hot_encoded = F.one_hot(actions, num_classes=self.act_dim)
-            action_embeddings = self.embed_action(one_hot_encoded.to(torch.float32)).squeeze()
+            action_embeddings = self.embed_action(one_hot_encoded.to(torch.float32)).squeeze(-2)
             returns_embeddings = self.embed_return(returns_to_go)
             time_embeddings = self.embed_timestep(timesteps)
 
@@ -291,7 +296,6 @@ class My_Transformer_preference_awareness(TrajectoryModel):
             action_preds = action_preds * sum(self.normal_helper.values())
             action_preds = action_preds / self.counts_tensor
 
-        action_preds = F.softmax(action_preds, dim=-1)
         # concat action and hidden state
         query_response = x[:, 1] + x[:, 2]
         if self.is_usr:
@@ -525,6 +529,11 @@ class My_Transformer_preference_awareness(TrajectoryModel):
 
         _, action_preds, return_preds = self.forward(
             states, actions, None, returns_to_go, timesteps, attention_mask=attention_mask, **kwargs)
-        return action_preds[0, -1]
-
-
+        probs = F.softmax(action_preds[0, -1], dim=-1)
+        action_mask = kwargs.get('action_mask')
+        if action_mask is not None:
+            mask = action_mask.to(device=probs.device, dtype=probs.dtype)
+            probs = probs * mask
+            if probs.sum() > 0:
+                probs = probs / probs.sum()
+        return probs

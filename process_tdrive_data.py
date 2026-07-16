@@ -41,9 +41,11 @@ def process_multiple_files(directory):
 
 from scipy.interpolate import griddata
 
-# Directory containing the text files
-directory_path = r'E:\opendata\tdrive\taxi_log_2008_by_id\\'
-# directory_path = r'./opendatahub/tdrive/taxi_log_2008_by_id/'
+# Directory containing the raw T-Drive text files.
+directory_path = os.environ.get(
+    'TDRIVE_RAW_DIR',
+    os.path.join('offline_data_hub', 'opendata', 'tdrive', 'taxi_log_2008_by_id')
+)
 print("Reading files...")
 # Process all files in the directory and get combined coordinates
 beijing_lat_min, beijing_lat_max = 39.26, 41.03
@@ -79,7 +81,7 @@ action_dict["0_0"] = 0
 combine_df = pd.DataFrame()
 limit = 1
 for t in range(0, 10400):
-    file_path = directory_path + r'%d.txt' % t
+    file_path = os.path.join(directory_path, f'{t}.txt')
     if not os.path.exists(file_path):
         continue
     # Process all files in the directory and get combined coordinates

@@ -7,6 +7,9 @@ import numpy as np
 from Proposed.models.models.tools import *
 from prepare_toyota_dataset import get_rl_data
 from itertools import chain
+from trajgpt_config import DATASET_SPECS
+
+TOYOTA_SPEC = DATASET_SPECS["toyota"]
 
 
 class obs_action_encoder(nn.Module):
@@ -14,9 +17,9 @@ class obs_action_encoder(nn.Module):
         super().__init__()
         # obs[0:2] is the position, obs[3] is the velocity, obs[4] is the step tag, obs[5] is the time tag
         self.h_dim = h_dim
-        self.embed_link = nn.Embedding(262144, h_dim)
+        self.embed_link = nn.Embedding(TOYOTA_SPEC.spatial_vocab_size, h_dim)
         self.embed_timestep = nn.Embedding(seq_len, h_dim)
-        self.embed_departure = nn.Embedding(144, h_dim)
+        self.embed_departure = nn.Embedding(TOYOTA_SPEC.departure_bins, h_dim)
         self.embed_speed = torch.nn.Linear(1, h_dim)
         self.embed_action = torch.nn.Linear(action_dim, h_dim)
 
@@ -76,11 +79,8 @@ class encoder(nn.Module):
 #         self.action_size = action_size
 #         self.lstm = nn.LSTM(z_dim, h_dim, batch_first=True)
 #         # self.output_layer = nn.Linear(h_dim, (self.obs_size + self.action_size) * self.seq_len)
-#         self.o_recon = nn.Linear(h_dim, 262144)
-#         self.d_recon = nn.Linear(h_dim, 262144)
 #         self.speed_recon = nn.Linear(h_dim, 1 * seq_len)
 #         self.t_recon = nn.Linear(h_dim, seq_len * seq_len)
-#         self.depart_recon = nn.Linear(h_dim, 144)
 #         self.a_recon = nn.Linear(h_dim, action_dim * seq_len)
 #         # self.link_recon = nn.Linear(h_dim, 28000 * seq_len)
 #
@@ -88,12 +88,10 @@ class encoder(nn.Module):
 #         output, _ = self.lstm(x)
 #         output = output.reshape((-1, self.h_dim))
 #         o = self.o_recon(output)
-#         o = o.reshape(-1, 1, 262144)
 #         o = nn.Softmax(dim=2)(o)
 #         o = o.repeat(1, self.seq_len, 1)
 #
 #         d = self.d_recon(output)
-#         d = d.reshape(-1, 1, 262144)
 #         d = nn.Softmax(dim=2)(d)
 #         d = d.repeat(1, self.seq_len, 1)
 #
@@ -105,7 +103,6 @@ class encoder(nn.Module):
 #         t = t.reshape(-1, self.seq_len, 1)
 #
 #         depart = self.depart_recon(output)
-#         depart = depart.reshape(-1, 1, 144)
 #         depart = nn.Softmax(dim=2)(depart)
 #         depart = depart.repeat(1, self.seq_len, 1)
 #

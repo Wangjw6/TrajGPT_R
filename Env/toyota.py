@@ -1,6 +1,9 @@
 import pickle
 import gym
 import numpy as np
+from trajgpt_config import DATASET_SPECS
+
+SPEC = DATASET_SPECS["toyota"]
 
 # with open(f"./offline_data_hub/data_2021101_1107_tokyo_core/conn_dictS_heart2.pkl", 'rb') as file:
 #     # Pickle the 'data' dictionary using the highest protocol available.
@@ -40,7 +43,8 @@ def find_connect(link, lat=None, lng=None):
 
 class ToyotaEnv(gym.Env):
     def __init__(self, train_data=None, test_data=None, state_dim=6):
-        self.action_space = gym.spaces.Discrete(4)
+        self.max_actions = SPEC.action_dim
+        self.action_space = gym.spaces.Discrete(self.max_actions)
         self.observation_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(state_dim,), dtype=np.float32)
         self.state = np.zeros(2)
         self.goal = np.zeros(2)
@@ -50,7 +54,6 @@ class ToyotaEnv(gym.Env):
         self.max_steps = 100
         # For TrajGAIL
         self.states = []
-        self.max_actions = 20
         self.train_data = train_data
         self.test_data = test_data
         self.id_to_link = id_to_link
@@ -62,37 +65,28 @@ class ToyotaEnv(gym.Env):
         return [seed]
 
     def step(self, obs, action):
-        action = np.array(action).astype(int)
+        action = int(np.array(action).reshape(-1)[0])
         current_link = int(obs[2])
         try:
             connect_links = find_connect(id_to_link[current_link])
-        except Exception as e:
-            return obs, 0., True, connect_links
-        # print(connect_links)
-        # if len(connect_links) == 0:
-        #     print('no connect links')
+        except (KeyError, ValueError):
+            return np.array(obs), 0., True, []
         r = 0.
         flag = False
-        if len(connect_links) > action:
-            # print([link_to_id[l] for l in connect_links], action)
+        if not connect_links:
+            return np.array(obs), r, True, []
+        if 0 <= action < len(connect_links):
             next_link = connect_links[action]
             r = 0.
         else:
-            action = max(0, action % len(connect_links) - 1)
-            try:
-                next_link = connect_links[action]
-            except:
-                # print('action', action)
-                # print(len(connect_links))
-
-                return obs, 0., False, connect_links
+            return np.array(obs), r, True, [link_to_id[l] for l in connect_links if l in link_to_id]
 
         try:
             next_link = link_to_id[next_link]
-            if next_link>= 262144:
+            if next_link >= SPEC.spatial_vocab_size:
                 flag = True
-        except:
-            flag = True
+        except KeyError:
+            return np.array(obs), r, True, [link_to_id[l] for l in connect_links if l in link_to_id]
         try:
             next_obs = [int(obs[0]), int(obs[1]), next_link, obs[3], int(obs[4])+1, int(obs[5])]
         except:

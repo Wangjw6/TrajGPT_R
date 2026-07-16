@@ -45,5 +45,3 @@ def dpo_loss(policy_chosen_logps: torch.FloatTensor,
     rejected_rewards = beta * (policy_rejected_logps - reference_rejected_logps).detach()
 
     return losses, chosen_rewards, rejected_rewards
-
-

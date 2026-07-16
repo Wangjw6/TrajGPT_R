@@ -15,7 +15,8 @@ def process_data(trajectories, seq_len=256):
         # try:
         #     state = np.concatenate([path['observations'].reshape(-1, 4)[:, :], path['actions'].reshape(-1, 1)], axis=1)
         # except:
-        state = np.concatenate([path['observations'].reshape(-1, 7)[:, :], path['actions'].reshape(-1, 1)], axis=1)
+        observations = np.asarray(path['observations'])
+        state = np.concatenate([observations.reshape(-1, observations.shape[-1]), path['actions'].reshape(-1, 1)], axis=1)
         states.append(state)
         traj_lens.append(len(path['observations']))
         returns.append(path['rewards'].sum())

@@ -293,7 +293,7 @@ def eval_generation_agg(model, trajectories, link_to_id, state_dim, act_dim, dev
         for j in range(trajectories[i]['observations'].shape[0] + 10):
             action_mask = torch.ones(act_dim, device=device)
             action_space = len(find_connect(id_to_link[int(observation[0][2])])) + 1
-            if action_space == 1:
+            if action_space < act_dim:
                 action_mask[action_space:] = 0
             gen_trajectory.append(observation[0][2])
 
@@ -312,6 +312,7 @@ def eval_generation_agg(model, trajectories, link_to_id, state_dim, act_dim, dev
                                           target_return,
                                           timesteps,
                                           i,
+                                          action_mask=action_mask,
                                           )
                 entropy = -torch.sum(action * torch.log(action + 1e-9)).cpu().detach().numpy()
                 action_entropy.append(entropy)
@@ -354,9 +355,10 @@ def eval_generation_agg(model, trajectories, link_to_id, state_dim, act_dim, dev
             episode_return += reward
             episode_length += 1
         gen_trajectories.append(gen_trajectory)
-    with open(f'./outputs/{model_name}_gen_toyota.pk', 'wb') as f:
+    os.makedirs('./results', exist_ok=True)
+    with open(f'./results/{model_name}_gen_toyota.pk', 'wb') as f:
         pickle.dump(gen_trajectories, f)
-    with open(f'./outputs/{model_name}_tar_toyota.pk', 'wb') as f:
+    with open(f'./results/{model_name}_tar_toyota.pk', 'wb') as f:
         pickle.dump(real_trajectories, f)
     print("==== Evaluation ======== Evaluation ======== Evaluation ======== Evaluation ======== Evaluation ====")
     print(f'time: {time.localtime()}')

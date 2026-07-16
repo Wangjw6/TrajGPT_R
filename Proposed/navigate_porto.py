@@ -9,6 +9,7 @@ from Proposed.models.training.seq_trainer import SequenceTrainer
 import os
 import time
 import torch
+from checkpoint_utils import load_model_state, resolve_checkpoint_path
 
 def count_parameters(model):
     total_params = sum(p.numel() for p in model.parameters())
@@ -38,8 +39,6 @@ def experiment(
         cuda_idx = int(variant.get('device', 'cuda').split(":")[1])
         torch.cuda.set_device(cuda_idx)
         device = torch.device(f'cuda:{cuda_idx}')
-    if os.name == 'nt':
-        device = torch.device('cuda')
     env_name, dataset = variant['env'], variant['dataset']
     assert env_name == 'porto'
     from Env.porto import portoEnv
@@ -174,7 +173,7 @@ def experiment(
             si = random.randint(0, traj['rewards'].shape[0] - 1)
             max_len_ = min(max_len, traj['rewards'].shape[0] - si)
             # get full traj info
-            sa = np.concatenate([traj['observations'].reshape(-1, 7), traj['actions'].reshape(-1, 1)], axis=1)
+            sa = np.concatenate([traj['observations'].reshape(-1, state_dim), traj['actions'].reshape(-1, 1)], axis=1)
             state_action.append(sa)
             traj_lens.append([si, si + max_len_])
             # get sequences from dataset
@@ -228,6 +227,16 @@ def experiment(
 
     flag = 0
     phase = variant.get('phase', '0')
+    pretrained_checkpoint = resolve_checkpoint_path(
+        variant.get('pretrained_checkpoint'),
+        default_dir='./saved_models',
+        extension='.pt',
+    )
+    preference_checkpoint = resolve_checkpoint_path(
+        variant.get('preference_checkpoint'),
+        default_dir='./save_preference',
+        extension='.pth',
+    )
     if model_type == "myp":
         assert preference_model is not None
         model_name = 'My_Transformer_od_ft' + env_name
@@ -251,40 +260,13 @@ def experiment(
             ft_type=variant['ft_type'],
         )
         if '1' in phase:
-            if variant['ft_type'] == 'dpo':
-                state_dict_name = ''
-            elif variant['ft_type'] == 'jd':
-                state_dict_name = ''
-            elif variant['ft_type'] == 'ad':
-                state_dict_name = ''
-            elif variant['ft_type'] == 'rlhfw0':
-                state_dict_name = ''
-
-            else:
-                flag = 1
-            state_dict_name = "My_Transformer_od_awarenessportousr_00_300"
-            try:
-                state_dict = torch.load(f'./saved_models/{state_dict_name}.pt')
-            except:
-                try:
-                    state_dict = torch.load(f'./saved_models/{state_dict_name}.pt', map_location={'cuda:2': 'cuda:0'})
-                except:
-                    state_dict = torch.load(f'./saved_models/{state_dict_name}.pt', map_location={'cuda:1': 'cuda:0'})
-            model_state_dict = model.state_dict()
-            state_dict = {k.replace('_orig_mod.', ''): v for k, v in state_dict.items()}
-            filtered_state_dict = {k: v for k, v in state_dict.items() if k in model_state_dict}
-
-            model.load_state_dict(filtered_state_dict, strict=False)
-
+            if pretrained_checkpoint is None:
+                raise ValueError("--pretrained_checkpoint is required for preference fine-tuning phase '1'.")
+            load_model_state(model, pretrained_checkpoint, device=device, strict=False, allow_partial=True)
             model.set_preference_model_fix(preference_model.q_net)
-            ft_model_name = "iql_preference_global_porto300"
-            try:
-                state_dict = torch.load(f'./save_preference/{ft_model_name}.pth')
-            except:
-                state_dict = torch.load(f'./save_preference/{ft_model_name}.pth', map_location=torch.device('cuda'))
-            model_state_dict = model.preference_model.state_dict()
-            filtered_state_dict = {k: v for k, v in state_dict.items() if k in model_state_dict}
-            model.preference_model.load_state_dict(filtered_state_dict, strict=False)
+            if preference_checkpoint is None:
+                raise ValueError("--preference_checkpoint is required for preference fine-tuning phase '1'.")
+            load_model_state(model.preference_model, preference_checkpoint, device=device, strict=False, allow_partial=True)
         else:
             model.set_preference_model_fix(preference_model.q_net)
         ref_model = copy.deepcopy(model)
@@ -292,7 +274,6 @@ def experiment(
 
     if model_type == "my":
         model_name = 'My_Transformer_od_awareness' + env_name
-        flag = 1
         model = My_Transformer_od_awareness(
             state_dim=state_dim,
             act_dim=act_dim,
@@ -312,19 +293,8 @@ def experiment(
             env=env_name,
             ft_type=variant['ft_type'],
         )
-        state_dict_name = "My_Transformer_od_awarenessportousr_00_300"
-        try:
-            state_dict = torch.load(f'./saved_models/{state_dict_name}.pt')
-        except:
-            try:
-                state_dict = torch.load(f'./saved_models/{state_dict_name}.pt', map_location={'cuda:2': 'cuda:0'})
-            except:
-                state_dict = torch.load(f'./saved_models/{state_dict_name}.pt', map_location={'cuda:1': 'cuda:0'})
-        model_state_dict = model.state_dict()
-        state_dict = {k.replace('_orig_mod.', ''): v for k, v in state_dict.items()}
-        filtered_state_dict = {k: v for k, v in state_dict.items() if k in model_state_dict}
-
-        model.load_state_dict(filtered_state_dict, strict=False)
+        if pretrained_checkpoint is not None:
+            load_model_state(model, pretrained_checkpoint, device=device, strict=False, allow_partial=True)
 
     model = model.to(device=device)
     try:

@@ -6,32 +6,10 @@ import transformers
 
 from Proposed.models.models.model import TrajectoryModel
 from Proposed.models.models.trajectory_gpt2 import GPT2Model
+from trajgpt_config import get_dataset_spec
 import torch.nn.functional as F
 
 
-import os
-import re
-import pickle
-def get_incremental_filename(directory, base_name, extension):
-    # List all files in the directory
-    files = os.listdir(directory)
-
-    # Regular expression to match filenames in the pattern base_name_number.extension
-    pattern = re.compile(rf'{base_name}_(\d+)\.{extension}')
-
-    # Find all files that match the pattern and extract the numbers
-    numbers = [int(m.group(1)) for f in files if (m := pattern.match(f))]
-
-    # If no such files exist, start with 1
-    if numbers:
-        counter = max(numbers) + 1
-    else:
-        counter = 1
-
-    # Construct the new file name
-    file_name = f"{base_name}_{counter}.{extension}"
-
-    return os.path.join(directory, file_name)
 class My_Transformer_od_awareness(TrajectoryModel):
     """
     This model uses GPT to model (Return_1, state_1, action_1, Return_2, state_2, ...)
@@ -58,7 +36,11 @@ class My_Transformer_od_awareness(TrajectoryModel):
             **kwargs
         )
         self.env = env
+        self.dataset_spec = get_dataset_spec(env)
         self.hidden_size = hidden_size
+        self.is_usr = False
+        self.counts_tensor = None
+        spec = self.dataset_spec
         if env == "toyota":
             self.transformer = GPT2Model(config)
             # self.od_transformer = GPT2Model(config)
@@ -71,11 +53,11 @@ class My_Transformer_od_awareness(TrajectoryModel):
             self.embed_return = torch.nn.Linear(1, hidden_size)
 
             self.embed_action = torch.nn.Linear(self.act_dim, hidden_size)
-            self.embed_link = nn.Embedding(262144, hidden_size)
-            self.embed_o = nn.Embedding(262144, hidden_size)
-            self.embed_d = nn.Embedding(262144, hidden_size)
-            self.embed_speed = nn.Embedding(120, hidden_size)
-            self.embed_departure = nn.Embedding(144, hidden_size)
+            self.embed_link = nn.Embedding(spec.spatial_vocab_size, hidden_size)
+            self.embed_o = nn.Embedding(spec.spatial_vocab_size, hidden_size)
+            self.embed_d = nn.Embedding(spec.spatial_vocab_size, hidden_size)
+            self.embed_speed = nn.Embedding(spec.speed_bins, hidden_size)
+            self.embed_departure = nn.Embedding(spec.departure_bins, hidden_size)
 
             self.embed_ln = nn.LayerNorm(hidden_size)
             self.predict_state = torch.nn.Linear(hidden_size, self.state_dim)
@@ -86,10 +68,9 @@ class My_Transformer_od_awareness(TrajectoryModel):
 
             self.hidden_size = hidden_size
             self.embed_state = torch.nn.Linear(hidden_size * 5, hidden_size)
-            self.is_usr = False
             if kwargs['usr'] == "all":
                 self.is_usr = True
-                self.embed_usr = nn.Embedding(40000, hidden_size)
+                self.embed_usr = nn.Embedding(spec.user_vocab_size, hidden_size)
                 self.reasoning = nn.Linear(hidden_size, hidden_size)
         if env == "tdrive":
             self.transformer = GPT2Model(config)
@@ -102,10 +83,10 @@ class My_Transformer_od_awareness(TrajectoryModel):
             self.embed_return = torch.nn.Linear(1, hidden_size)
 
             self.embed_action = torch.nn.Linear(self.act_dim, hidden_size)
-            self.embed_link = nn.Embedding(16384, hidden_size)
-            self.embed_o = nn.Embedding(16384, hidden_size)
-            self.embed_d = nn.Embedding(16384, hidden_size)
-            self.embed_departure = nn.Embedding(144, hidden_size)
+            self.embed_link = nn.Embedding(spec.spatial_vocab_size, hidden_size)
+            self.embed_o = nn.Embedding(spec.spatial_vocab_size, hidden_size)
+            self.embed_d = nn.Embedding(spec.spatial_vocab_size, hidden_size)
+            self.embed_departure = nn.Embedding(spec.departure_bins, hidden_size)
             self.embed_state = torch.nn.Linear(hidden_size * 4, hidden_size)
             self.embed_ln = nn.LayerNorm(hidden_size)
 
@@ -119,7 +100,7 @@ class My_Transformer_od_awareness(TrajectoryModel):
             self.hidden_size = hidden_size
             if kwargs['usr'] == "all":
                 self.is_usr = True
-                self.embed_usr = nn.Embedding(10000, hidden_size)
+                self.embed_usr = nn.Embedding(spec.user_vocab_size, hidden_size)
                 self.reasoning = nn.Linear(hidden_size, hidden_size)
 
         if env == "porto":
@@ -133,10 +114,10 @@ class My_Transformer_od_awareness(TrajectoryModel):
             self.embed_return = torch.nn.Linear(1, hidden_size)
 
             self.embed_action = torch.nn.Linear(self.act_dim, hidden_size)
-            self.embed_link = nn.Embedding(5524, hidden_size)
-            self.embed_o = nn.Embedding(5524, hidden_size)
-            self.embed_d = nn.Embedding(5524, hidden_size)
-            self.embed_departure = nn.Embedding(144, hidden_size)
+            self.embed_link = nn.Embedding(spec.spatial_vocab_size, hidden_size)
+            self.embed_o = nn.Embedding(spec.spatial_vocab_size, hidden_size)
+            self.embed_d = nn.Embedding(spec.spatial_vocab_size, hidden_size)
+            self.embed_departure = nn.Embedding(spec.departure_bins, hidden_size)
             self.embed_state = torch.nn.Linear(hidden_size * 4, hidden_size)
             self.embed_ln = nn.LayerNorm(hidden_size)
 
@@ -150,7 +131,7 @@ class My_Transformer_od_awareness(TrajectoryModel):
             self.hidden_size = hidden_size
             if kwargs['usr'] == "all":
                 self.is_usr = True
-                self.embed_usr = nn.Embedding(512, hidden_size)
+                self.embed_usr = nn.Embedding(spec.user_vocab_size, hidden_size)
                 self.reasoning = nn.Linear(hidden_size, hidden_size)
 
     def set_fixed_params(self):
@@ -185,7 +166,7 @@ class My_Transformer_od_awareness(TrajectoryModel):
 
             actions = actions.to(torch.int64)
             one_hot_encoded = F.one_hot(actions, num_classes=self.act_dim)
-            action_embeddings = self.embed_action(one_hot_encoded.to(torch.float32)).squeeze()
+            action_embeddings = self.embed_action(one_hot_encoded.to(torch.float32)).squeeze(-2)
             returns_embeddings = self.embed_return(returns_to_go)
             time_embeddings = self.embed_timestep(timesteps)
 
@@ -209,7 +190,7 @@ class My_Transformer_od_awareness(TrajectoryModel):
                 preference = self.reasoning(embed_usr + embed_o + embed_d + embed_depart)
             actions = actions.to(torch.int64)
             one_hot_encoded = F.one_hot(actions, num_classes=self.act_dim)
-            action_embeddings = self.embed_action(one_hot_encoded.to(torch.float32)).squeeze()
+            action_embeddings = self.embed_action(one_hot_encoded.to(torch.float32)).squeeze(-2)
             returns_embeddings = self.embed_return(returns_to_go)
             time_embeddings = self.embed_timestep(timesteps)
 
@@ -233,7 +214,7 @@ class My_Transformer_od_awareness(TrajectoryModel):
                 preference = self.reasoning(embed_usr + embed_o + embed_d + embed_depart)
             actions = actions.to(torch.int64)  # Converting to a tensor of type Long (int64)
             one_hot_encoded = F.one_hot(actions, num_classes=self.act_dim)
-            action_embeddings = self.embed_action(one_hot_encoded.to(torch.float32)).squeeze()
+            action_embeddings = self.embed_action(one_hot_encoded.to(torch.float32)).squeeze(-2)
             returns_embeddings = self.embed_return(returns_to_go)
             time_embeddings = self.embed_timestep(timesteps)
 
@@ -267,7 +248,6 @@ class My_Transformer_od_awareness(TrajectoryModel):
         if self.normal_helper is not None and (self.env == 'toyota' or self.env == 'porto'):
             action_preds = action_preds * sum(self.normal_helper.values())
             action_preds = action_preds / self.counts_tensor
-        action_preds = F.softmax(action_preds, dim=-1)
         # TODO only return first/last two actions when using attention bootstrapping
         if self.is_usr:
             return state_preds, action_preds, preference
@@ -309,4 +289,11 @@ class My_Transformer_od_awareness(TrajectoryModel):
             attention_mask = None
         _, action_preds, return_preds = self.forward(
             states, actions, None, returns_to_go, timesteps, attention_mask=attention_mask, **kwargs)
-        return action_preds[0, -1]
+        probs = F.softmax(action_preds[0, -1], dim=-1)
+        action_mask = kwargs.get('action_mask')
+        if action_mask is not None:
+            mask = action_mask.to(device=probs.device, dtype=probs.dtype)
+            probs = probs * mask
+            if probs.sum() > 0:
+                probs = probs / probs.sum()
+        return probs

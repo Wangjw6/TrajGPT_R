@@ -1,6 +1,9 @@
 import pickle
 import gym
 import numpy as np
+from trajgpt_config import DATASET_SPECS
+
+SPEC = DATASET_SPECS["geolife"]
 
 # with open(f"./offline_data_hub/opendata/tdrive_vehiclesS.pkl", 'rb') as file:
 #     trajs = pickle.load(file)
@@ -13,7 +16,8 @@ with open(f"./offline_data_hub/opendata/geolife_inverse_action_dict.pkl", 'rb') 
 
 class GeolifeEnv(gym.Env):
     def __init__(self, train_data=None, test_data=None, grid=None, state_dim=6):
-        self.action_space = gym.spaces.Discrete(4)
+        self.max_actions = SPEC.action_dim
+        self.action_space = gym.spaces.Discrete(self.max_actions)
         self.observation_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(state_dim,), dtype=np.float32)
         self.state = np.zeros(2)
         self.goal = np.zeros(2)
@@ -23,7 +27,6 @@ class GeolifeEnv(gym.Env):
         self.max_steps = 100
         # For TrajGAIL
         self.states = []
-        self.max_actions = 10
         self.train_data = train_data
         self.test_data = test_data
         self.tdrive_inverse_action_dict = geolife_inverse_action_dict
@@ -51,8 +54,7 @@ class GeolifeEnv(gym.Env):
                 if self.state_dim == 7:
                     next_obs = np.array([current_grid, next_lat, next_lon, obs[3], obs[4], obs[5], obs[6]])
                 r = 0.
-                flag = 1
-                return next_obs, r, 0, None
+                return next_obs, r, True, None
         except:
             print(next_lat, next_lon)
             raise

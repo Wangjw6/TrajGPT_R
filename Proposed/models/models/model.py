@@ -5,7 +5,7 @@ import torch.nn as nn
 
 class TrajectoryModel(nn.Module):
 
-    def __init__(self, state_dim, act_dim, max_length=None, spatial_tokens=262144):
+    def __init__(self, state_dim, act_dim, max_length=None):
         super().__init__()
 
         self.state_dim = state_dim

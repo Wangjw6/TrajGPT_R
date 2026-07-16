@@ -1,0 +1,20 @@
+# Normalize source/documentation files to LF in Git for reproducible diffs.
+* text=auto
+
+*.py text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+*.cff text eol=lf
+*.gitignore text eol=lf
+.gitattributes text eol=lf
+
+# Binary and large artifacts should not be line-ending normalized.
+*.pkl binary
+*.pk binary
+*.pt binary
+*.pth binary
+*.zip binary
+*.pdf binary

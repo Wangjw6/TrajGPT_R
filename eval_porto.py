@@ -338,9 +338,10 @@ def eval_generation_agg(model, trajectories, link_to_id, state_dim, act_dim, dev
 
         gen_trajectories.append(gen_trajectory)
 
-    with open(f'./outputs/{model_name}_gen_porto.pk', 'wb') as f:
+    os.makedirs('./results', exist_ok=True)
+    with open(f'./results/{model_name}_gen_porto.pk', 'wb') as f:
         pickle.dump(gen_trajectories, f)
-    with open(f'./outputs/{model_name}_tar_porto.pk', 'wb') as f:
+    with open(f'./results/{model_name}_tar_porto.pk', 'wb') as f:
         pickle.dump(real_trajectories, f)
     print(f'time: {time.localtime()}')
     print(f'sum_reward: {sum_reward}')
@@ -348,4 +349,3 @@ def eval_generation_agg(model, trajectories, link_to_id, state_dim, act_dim, dev
     similarity = get_similarity(gen_trajectories, real_trajectories, jaccard_similarity, "Jaccard")
     similarity = get_similarity(gen_trajectories, real_trajectories, cosine_similarity, "Cosine")
     similarity = get_similarity(gen_trajectories, od_trajectories, bleu_score, "BLEU")
-

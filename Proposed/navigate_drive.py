@@ -1,4 +1,4 @@
-
+import numpy as np
 import copy
 from eval_drive import eval_generation_agg
 import random
@@ -7,10 +7,10 @@ from Proposed.models.models.my_transformer_perference_awareness import My_Transf
 from Proposed.models.training.seq_trainer import SequenceTrainer
 
 
-from Env.toyota import *
 import os
 import time
 import torch
+from checkpoint_utils import load_model_state, resolve_checkpoint_path
 
 
 def count_parameters(model):
@@ -45,8 +45,6 @@ def experiment(
         cuda_idx = int(variant.get('device', 'cuda').split(":")[1])
         torch.cuda.set_device(cuda_idx)
         device = torch.device(f'cuda:{cuda_idx}')
-    if os.name == 'nt':
-        device = torch.device('cuda')
     env_name, dataset = variant['env'], variant['dataset']
     assert env_name == 'tdrive'
     from Env.tdrive import TdriveEnv
@@ -185,16 +183,12 @@ def experiment(
             si = random.randint(0, traj['rewards'].shape[0] - 1)
             max_len_ = min(max_len, traj['rewards'].shape[0] - si)
             # get full traj info
-            sa = np.concatenate([traj['observations'].reshape(-1, 7), traj['actions'].reshape(-1, 1)], axis=1)
+            sa = np.concatenate([traj['observations'].reshape(-1, state_dim), traj['actions'].reshape(-1, 1)], axis=1)
             state_action.append(sa)
             traj_lens.append([si, si + max_len_])
             # get sequences from dataset
             s.append(traj['observations'][si:si + max_len_].reshape(1, -1, state_dim))
             a_mask = np.zeros((1, max_len_, act_dim))
-            for k in range(s[-1].shape[1]):
-                current_link = int(s[-1][0, k, 2])
-                action_space = len(find_connect(id_to_link[current_link])) + 1
-                a_mask[0, k, action_space:] = 1.
             a.append(traj['actions'][si:si + max_len_].reshape(1, -1, 1))
             r.append(traj['rewards'][si:si + max_len_].reshape(1, -1, 1))
             action_mask_batch.append(a_mask)
@@ -238,6 +232,16 @@ def experiment(
         traj_lens = torch.from_numpy(np.array(traj_lens)).long().to(device=device)
         return s, a, r, d, rtg, timesteps, mask, action_mask_batch, state_action, traj_lens
     phase = variant.get('phase', '0')
+    pretrained_checkpoint = resolve_checkpoint_path(
+        variant.get('pretrained_checkpoint'),
+        default_dir='./saved_models',
+        extension='.pt',
+    )
+    preference_checkpoint = resolve_checkpoint_path(
+        variant.get('preference_checkpoint'),
+        default_dir='./save_preference',
+        extension='.pth',
+    )
     ref_model = None
     is_ft = 0
     flag = 0
@@ -265,33 +269,13 @@ def experiment(
             ft_type=variant['ft_type'],
         )
         if '1' in phase:
-            state_dict_name = 'My_Transformer_od_awarenesstdrive_0_00_380'#'My_Transformer_od_awarenesstdrive_0_219_0904'#My_Transformer_od_awarenesstdrive_0_239_0904'
-            if variant['ft_type'] == 'dpo':
-                state_dict_name = 'My_Transformer_od_fttdriveusr_dpo_116'
-            elif variant['ft_type'] == 'rlhfw0':
-                state_dict_name = 'My_Transformer_od_fttdriveusr_rlhfw0_236'
-            else:
-                flag = 1
-            try:
-                state_dict = torch.load(f'./saved_models/{state_dict_name}.pt')
-            except:
-                state_dict = torch.load(f'./saved_models/{state_dict_name}.pt', map_location={'cuda:1': 'cuda:0'})
-            model_state_dict = model.state_dict()
-
-            state_dict = {k.replace('_orig_mod.', ''): v for k, v in state_dict.items()}
-            filtered_state_dict = {k: v for k, v in state_dict.items() if k in model_state_dict}
-
-            model.load_state_dict(filtered_state_dict, strict=False)
-
+            if pretrained_checkpoint is None:
+                raise ValueError("--pretrained_checkpoint is required for preference fine-tuning phase '1'.")
+            load_model_state(model, pretrained_checkpoint, device=device, strict=False, allow_partial=True)
             model.set_preference_model_fix(preference_model.q_net)
-            preference_model_name = "iql_preference_global_drive200" #"Lsoftq1500"
-            try:
-                state_dict = torch.load(f'./save_preference/{preference_model_name}.pth')
-            except:
-                state_dict = torch.load(f'./save_preference/{preference_model_name}.pth', map_location=torch.device('cuda'))
-            model_state_dict = model.preference_model.state_dict()
-            filtered_state_dict = {k: v for k, v in state_dict.items() if k in model_state_dict}
-            model.preference_model.load_state_dict(filtered_state_dict, strict=False)
+            if preference_checkpoint is None:
+                raise ValueError("--preference_checkpoint is required for preference fine-tuning phase '1'.")
+            load_model_state(model.preference_model, preference_checkpoint, device=device, strict=False, allow_partial=True)
         else:
             model.set_preference_model_fix(preference_model.q_net)
         ref_model = copy.deepcopy(model)
@@ -318,18 +302,9 @@ def experiment(
             ft_type=variant['ft_type'],
         )
         if '1' in phase:
-            state_dict_name = 'My_Transformer_od_awarenesstdrive_0_00_380'
-            try:
-                state_dict = torch.load(f'./saved_models/{state_dict_name}.pt')
-            except:
-                try:
-                    state_dict = torch.load(f'./saved_models/{state_dict_name}.pt', map_location={'cuda:2': 'cuda:0'})
-                except:
-                    state_dict = torch.load(f'./saved_models/{state_dict_name}.pt', map_location={'cuda:1': 'cuda:0'})
-            model_state_dict = model.state_dict()
-            state_dict = {k.replace('_orig_mod.', ''): v for k, v in state_dict.items()}
-            filtered_state_dict = {k: v for k, v in state_dict.items() if k in model_state_dict}
-            model.load_state_dict(filtered_state_dict, strict=True)
+            if pretrained_checkpoint is None:
+                raise ValueError("--pretrained_checkpoint is required when phase contains '1'.")
+            load_model_state(model, pretrained_checkpoint, device=device, strict=True, allow_partial=False)
 
     model = model.to(device=device)
     try:
@@ -384,12 +359,12 @@ def experiment(
             else:
                 torch.save(trainer.model.state_dict(), f"./saved_models/{model_name}_{is_ft}_{phase}_{iter}.pt")
             trainer.model.eval()
-            eval_generation_agg(model=trainer.model, trajectories=test_trajectories, link_to_id=link_to_id,
+            eval_generation_agg(model=trainer.model, trajectories=test_trajectories, link_to_id=grid,
                                 state_dim=state_dim, act_dim=act_dim, device=device, state_mean=state_mean,
                                 state_std=state_std, env=env, scale=scale, model_name=saved_model_name+"_full")
 
             print()
-    eval_generation_agg(model=trainer.model, trajectories=test_trajectories, link_to_id=link_to_id,
+    eval_generation_agg(model=trainer.model, trajectories=test_trajectories, link_to_id=grid,
                         state_dim=state_dim, act_dim=act_dim, device=device, state_mean=state_mean,
                         state_std=state_std, env=env, scale=scale, model_name=saved_model_name+"_full")
     torch.save(trainer.model.state_dict(), f'./saved_models/{model_name}_{is_ft}_last.pt')

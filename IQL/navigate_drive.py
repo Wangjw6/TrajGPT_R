@@ -10,6 +10,7 @@ from get_tdrive_dataset import get_rl_data
 import types
 from IQL.models.Memory import Memory
 from eval_drive import eval_generation_agg
+from checkpoint_utils import load_model_state, resolve_checkpoint_path
 
 
 def experiment(variant):
@@ -28,11 +29,11 @@ def experiment(variant):
     #     if len(od_to_traj[od]) < 2:
     #         del od_to_traj[od]
 
+    device = torch.device('cpu')
     if variant.get('device', 'cuda').split(":")[0] == 'cuda' and torch.cuda.is_available():
         cuda_idx = int(variant.get('device', 'cuda').split(":")[1])
         torch.cuda.set_device(cuda_idx)
         device = torch.device(f'cuda:{cuda_idx}')
-    # device = torch.device('cpu')
 
     from Env.tdrive import TdriveEnv
     if variant['usr'] == 'all':
@@ -62,17 +63,18 @@ def experiment(variant):
     full_expert_buffer.load(trajectories, 1, 1)
     data = full_expert_buffer.buffer
     step = 0
-    state_dict_name = "iql_preference_global_drive200"
-    try:
-        state_dict = torch.load(f'./save_preference/{state_dict_name}.pth')
-    except:
-        state_dict = torch.load(f'./save_preference/{state_dict_name}.pth',map_location=torch.device('cuda'))
-    model_state_dict = agent.q_net.state_dict()
-    agent.q_net.load_state_dict(state_dict)
+    preference_checkpoint = resolve_checkpoint_path(
+        variant.get('preference_checkpoint'),
+        default_dir='./save_preference',
+        extension='.pth',
+    )
+    if preference_checkpoint is not None:
+        load_model_state(agent.q_net, preference_checkpoint, device=device, strict=True, allow_partial=False)
     now = time.time()
-    eval_generation_agg(model=agent, trajectories=test_trajectories, link_to_id=grid,
-                        state_dim=state_dim, act_dim=act_dim, device=device, state_mean=1,
-                        state_std=1, env=env, scale=1, model_name="IQL")
+    if preference_checkpoint is not None:
+        eval_generation_agg(model=agent, trajectories=test_trajectories, link_to_id=grid,
+                            state_dim=state_dim, act_dim=act_dim, device=device, state_mean=1,
+                            state_std=1, env=env, scale=1, model_name="IQL")
     for e in range(opt['max_iters']):
         loss_set = {}
         # idx = np.random.permutation(len(data))

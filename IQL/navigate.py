@@ -10,6 +10,7 @@ from prepare_toyota_dataset import get_rl_data
 import types
 from IQL.models.Memory import Memory
 from eval import eval_generation_agg
+from checkpoint_utils import load_model_state, resolve_checkpoint_path
 
 
 
@@ -38,11 +39,11 @@ def experiment(variant):
         if len(od_to_traj[od]) < 2:
             del od_to_traj[od]
 
+    device = torch.device('cpu')
     if variant.get('device', 'cuda').split(":")[0] == 'cuda' and torch.cuda.is_available():
         cuda_idx = int(variant.get('device', 'cuda').split(":")[1])
         torch.cuda.set_device(cuda_idx)
         device = torch.device(f'cuda:{cuda_idx}')
-    # device = torch.device('cpu')
 
     from Env.toyota import ToyotaEnv
     env = ToyotaEnv(state_dim=7)
@@ -73,26 +74,16 @@ def experiment(variant):
     full_expert_buffer = Memory(1000000, 0)
     full_expert_buffer.load(trajectories, 1, 1)
     step = 0
-    # try:
-    #     agent.q_net.load_state_dict(torch.load(f'./save_preference/Lsoftq999.pth'))
-    #     print("load model")
-    # except:
-    #     agent.q_net.load_state_dict(
-    #         torch.load(f'./save_preference/Lsoftq999.pth', map_location=torch.device('cuda')))
-    #     print("load model")
-    state_dict_name = "iql_preference_global700"
-    try:
-        state_dict = torch.load(f'./save_preference/{state_dict_name}.pth')
-    except:
-        state_dict = torch.load(f'./save_preference/{state_dict_name}.pth',map_location=torch.device('cuda'))
-    model_state_dict = agent.q_net.state_dict()
-    # compare the keys of the two state_dict
-    filtered_state_dict = {k: v for k, v in state_dict.items() if k in model_state_dict}
-
-    agent.q_net.load_state_dict(filtered_state_dict, strict=False)
-    eval_generation_agg(model=agent, trajectories=test_trajectories, link_to_id=link_to_id,
-                        state_dim=state_dim, act_dim=act_dim, device=device, state_mean=1,
-                        state_std=1, env=env, scale=1, model_name="IQL")
+    preference_checkpoint = resolve_checkpoint_path(
+        variant.get('preference_checkpoint'),
+        default_dir='./save_preference',
+        extension='.pth',
+    )
+    if preference_checkpoint is not None:
+        load_model_state(agent.q_net, preference_checkpoint, device=device, strict=False, allow_partial=True)
+        eval_generation_agg(model=agent, trajectories=test_trajectories, link_to_id=link_to_id,
+                            state_dim=state_dim, act_dim=act_dim, device=device, state_mean=1,
+                            state_std=1, env=env, scale=1, model_name="IQL")
     #
 
     data = full_expert_buffer.buffer
@@ -139,4 +130,3 @@ def experiment(variant):
     eval_generation_agg(model=agent, trajectories=test_trajectories, link_to_id=link_to_id,
                         state_dim=state_dim, act_dim=act_dim, device=device, state_mean=1,
                         state_std=1, env=env, scale=1, model_name="IQL")
-

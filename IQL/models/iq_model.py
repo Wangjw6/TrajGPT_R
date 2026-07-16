@@ -10,6 +10,9 @@ import numpy as np
 from torch.distributions import Categorical
 import torch.nn as nn
 from Proposed.models.models.preference_model import *
+from trajgpt_config import DATASET_SPECS
+
+SPEC = DATASET_SPECS["toyota"]
 
 
 def soft_update(net, target_net, tau):
@@ -52,13 +55,13 @@ class Critic(nn.Module):
         super().__init__()
         # obs[0:2] is the position, obs[3] is the velocity, obs[4] is the step tag, obs[5] is the time tag
         self.h_dim = h_dim
-        self.embed_link = nn.Embedding(262144, h_dim)
+        self.embed_link = nn.Embedding(SPEC.spatial_vocab_size, h_dim)
         self.embed_timestep = nn.Embedding(seq_len, h_dim)
-        self.embed_departure = nn.Embedding(144, h_dim)
-        self.embed_speed = nn.Embedding(120, h_dim)
+        self.embed_departure = nn.Embedding(SPEC.departure_bins, h_dim)
+        self.embed_speed = nn.Embedding(SPEC.speed_bins, h_dim)
         self.embed_state = torch.nn.Linear(h_dim * 5, h_dim)
         self.out = nn.Linear(h_dim, action_dim)
-        self.preference_token_embedding = nn.Embedding(40000, h_dim)
+        self.preference_token_embedding = nn.Embedding(SPEC.user_vocab_size, h_dim)
 
         self.preference_bias = nn.Linear(h_dim, action_dim)
         self.device = device
@@ -136,9 +139,13 @@ class SoftQ(object):
     def choose_action(self, state, action_mask):
         with torch.no_grad():
             q, _, _ = self.q_net(state)
-            dist = F.softmax(q / self.alpha, dim=1)
-
-            dist = Categorical(dist)
+            if action_mask is not None:
+                mask = action_mask.to(device=q.device, dtype=torch.bool)
+                if mask.dim() == 1:
+                    mask = mask.unsqueeze(0).expand_as(q)
+                if mask.any(dim=1).all():
+                    q = q.masked_fill(~mask, torch.finfo(q.dtype).min)
+            dist = Categorical(logits=q / self.alpha)
             action = dist.sample()
             entropy = dist.entropy()
         return action
@@ -170,6 +177,8 @@ class SoftQ(object):
                 return q.gather(1, action.long()), preference, q_.gather(1, action.long())
             return q, preference, q_
         q, _, _ = self.q_net(obs)
+        if action is None:
+            return q, None, None
         return q.gather(1, action.long()), None, None
 
     def get_full_q(self, obs, traj=None):
@@ -245,10 +254,12 @@ class SoftQ(object):
         # args = self.args
         # policy_obs, policy_next_obs, policy_action, policy_reward, policy_done = policy_batch
         expert_full, expert_len = None, None
-        try:
+        if len(expert_batch) == 7:
             expert_obs, expert_next_obs, expert_action, expert_reward, expert_done, expert_full, expert_len = expert_batch
-        except:
+        elif len(expert_batch) == 5:
             expert_obs, expert_next_obs, expert_action, expert_reward, expert_done = expert_batch
+        else:
+            raise ValueError(f"Expected expert batch with 5 or 7 elements, got {len(expert_batch)}")
 
         obs, next_obs, action = expert_batch[0:3]
         if expert_full is not None:
@@ -261,7 +272,7 @@ class SoftQ(object):
         obs_arr = obs.detach().cpu().numpy()
         q, preference, q_ = self.critic(obs, None, traj)
         q_1 = q.gather(1, action.long())
-        q_2 = q_.gather(1, action.long())
+        q_2 = q_.gather(1, action.long()) if q_ is not None else None
         if q_2 is not None:
             current_Q = q_1 + q_2
         else:
