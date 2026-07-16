@@ -7,9 +7,9 @@ This repository contains the implementation for:
 TrajGPT-R models urban trajectory generation as an offline reinforcement-learning sequence modeling problem. The code includes:
 
 - GPT-style trajectory pretraining with state, action, and arrival-status tokens.
-- Inverse-reinforcement-learning reward models for trajectory preference estimation.
-- Reward-model fine-tuning for generated trajectory reliability and diversity.
-- Evaluation utilities for path similarity, BLEU, link/connection JSD, and diversity metrics.
+- IRL-based value/reward models with base and preference components for reward-model-guided fine-tuning.
+- Reward-model fine-tuning for generated trajectory reliability and diversity, corresponding to the RMFT setting described in the paper.
+- Evaluation utilities for Jaccard similarity, cosine similarity, BLEU, link/connection JSD, and unigram/bigram entropy.
 
 ## Paper Alignment
 
@@ -18,22 +18,24 @@ The main entry points map to the paper datasets as follows:
 | Dataset | Entrypoint | Default model | Key paper settings |
 | --- | --- | --- | --- |
 | Toyota | `main.py` | `my` | embedding dim 512, context length 64, action dim 9 |
-| T-Drive | `main_drive.py` | `my` | embedding dim 256, context length 12, action dim 10 |
-| Porto | `main_porto.py` | `my` | embedding dim 256, context length 64, action dim 10 |
+| T-Drive | `main_drive.py` | `my` | embedding dim 256, context length 12, code action dim 10 |
+| Porto | `main_porto.py` | `my` | embedding dim 256, context length 64, code action dim 10 |
 
 `model_type=my` trains/evaluates the trajectory generator. `model_type=myp` enables reward-model fine-tuning and requires compatible trajectory and reward-model checkpoints when `--phase` selects a fine-tuning phase.
+
+For T-Drive and Porto, the paper describes 9 grid-movement actions. The released code uses action dimension 10 to include those movement actions plus an additional terminal/stay action used by the implementation.
 
 Dataset-specific constants are centralized in `trajgpt_config.py`; see `docs/developer_notes.md` before adding a new dataset or changing vocabulary/action dimensions.
 
 ## Installation
 
-The original experiments used PyTorch and Transformers versions from the Decision Transformer-era stack:
+The paper reports experiments using Python 3.11.8, PyTorch 2.5.0, Ubuntu 22.04.4, and four NVIDIA RTX A6000 GPUs. The provided `requirements.txt` reflects the currently prepared open-source code environment and may need adjustment to reproduce the exact paper environment:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-CUDA is optional for import and basic CPU checks, but full training is expected to require a CUDA-capable GPU.
+CUDA is optional for import and basic CPU checks, but reproducing the full paper-scale experiments is expected to require CUDA-capable GPUs.
 
 ## Data And Checkpoints
 
