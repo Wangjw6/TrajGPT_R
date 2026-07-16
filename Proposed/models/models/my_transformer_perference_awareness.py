@@ -364,7 +364,7 @@ class My_Transformer_preference_awareness(TrajectoryModel):
         action_preds = pred_action.view(batch_size, num_obs, num_classes)
         max_indices = torch.argmax(action_preds, dim=-1).reshape(-1)
 
-        poor_indices = torch.argmax(q, dim=-1).reshape(-1)
+        poor_indices = torch.argmin(q, dim=-1).reshape(-1)
 
         old_pred_action = old_pred_action.view(batch_size, num_obs, num_classes)
 
@@ -385,12 +385,24 @@ class My_Transformer_preference_awareness(TrajectoryModel):
         reference_chosen_logps = log_probs_old.gather(dim=-1, index=real_indices.unsqueeze(-1)).detach()
         reference_rejected_logps1 = log_probs_old.gather(dim=-1, index=max_indices.unsqueeze(-1)).detach()
         reference_rejected_logps2 = log_probs_old.gather(dim=-1, index=poor_indices.unsqueeze(-1)).detach()
+        valid_mask = attention_mask.reshape(-1) > 0
+        dpo_pair_mask1 = valid_mask & (real_indices != max_indices)
+        dpo_pair_mask2 = valid_mask & (real_indices != poor_indices)
+
+        def masked_dpo_mean(policy_rejected_logps, reference_rejected_logps, pair_mask):
+            if not torch.any(pair_mask):
+                return pred_action.sum() * 0.0
+            losses, _, _ = dpo_loss(
+                policy_chosen_logps[pair_mask],
+                policy_rejected_logps[pair_mask],
+                reference_chosen_logps[pair_mask],
+                reference_rejected_logps[pair_mask],
+                beta=0.3,
+            )
+            return losses.mean()
 
         if self.ft_type == "dpo":
-            losses, chosen_rewards, rejected_rewards = dpo_loss(policy_chosen_logps, policy_rejected_logps1,
-                                                                reference_chosen_logps, reference_rejected_logps1,
-                                                                beta=0.3)
-            return losses.mean()
+            return masked_dpo_mean(policy_rejected_logps1, reference_rejected_logps1, dpo_pair_mask1)
 
         if aux is not None:
             preference_train = aux[0]
@@ -398,14 +410,10 @@ class My_Transformer_preference_awareness(TrajectoryModel):
 
         if "rf*" in self.ft_type:
             w = float(self.ft_type.split("*")[1]) / 100.
-            losses1, chosen_rewards, rejected_rewards = dpo_loss(policy_chosen_logps, policy_rejected_logps1,
-                                                                 reference_chosen_logps, reference_rejected_logps1,
-                                                                 beta=0.3)
-            losses2, chosen_rewards, rejected_rewards = dpo_loss(policy_chosen_logps, policy_rejected_logps2,
-                                                                 reference_chosen_logps, reference_rejected_logps2,
-                                                                 beta=0.3)
+            losses1 = masked_dpo_mean(policy_rejected_logps1, reference_rejected_logps1, dpo_pair_mask1)
+            losses2 = masked_dpo_mean(policy_rejected_logps2, reference_rejected_logps2, dpo_pair_mask2)
             a = 0.8
-            return a * losses1.mean() + (1 - a) * losses2.mean() + w * irl_loss.mean()
+            return a * losses1 + (1 - a) * losses2 + w * irl_loss.mean()
 
         if "rlhfw" in self.ft_type:
             eps_clip = 0.2
@@ -441,12 +449,7 @@ class My_Transformer_preference_awareness(TrajectoryModel):
                     lastgaelam = delta + gamma * 0.95 * lastgaelam
                     advantages_reversed.append(lastgaelam)
                 advantages = torch.stack(advantages_reversed[::-1], axis=1)
-            value_pred_clipped = torch.clip(value_pred, value_pred - eps_clip, value_pred + eps_clip)
-            v_loss_clipped = F.mse_loss(value_pred_clipped.reshape(-1)[attention_mask.reshape(-1) > 0],
-                                        returns.reshape(-1)[attention_mask.reshape(-1) > 0])
-            v_loss_unclipped = F.mse_loss(value_pred.reshape(-1)[attention_mask.reshape(-1) > 0],
-                                returns.reshape(-1)[attention_mask.reshape(-1) > 0])
-            v_loss = torch.max(v_loss_clipped, v_loss_unclipped)
+            v_loss = F.mse_loss(value_pred.reshape(-1)[valid_mask], returns.reshape(-1)[valid_mask])
             ratios = torch.exp(policy_rejected_logps1.view(batch_size, num_obs) - reference_rejected_logps1.view(batch_size, num_obs))[:, -1].reshape(-1)
             advantages = advantages[:, -1].reshape(-1)
             surr1 = ratios * advantages.reshape(-1)

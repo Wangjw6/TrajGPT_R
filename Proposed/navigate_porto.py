@@ -270,6 +270,9 @@ def experiment(
         else:
             model.set_preference_model_fix(preference_model.q_net)
         ref_model = copy.deepcopy(model)
+        ref_model.eval()
+        for param in ref_model.parameters():
+            param.requires_grad = False
         model.ref_model = ref_model
 
     if model_type == "my":

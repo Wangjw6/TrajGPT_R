@@ -25,10 +25,12 @@ class SequenceTrainer(Trainer):
         loss2 = 0
         if full_trajs is not None:
             if ref_model is not None:
-                _, old_action_preds, aux_info = ref_model.forward(
-                    states, actions, rewards, rtg[:, :-1], timesteps, attention_mask=attention_mask,
-                    action_mask=action_mask_batch
-                )
+                ref_model.eval()
+                with torch.no_grad():
+                    _, old_action_preds, aux_info = ref_model.forward(
+                        states, actions, rewards, rtg[:, :-1], timesteps, attention_mask=attention_mask,
+                        action_mask=action_mask_batch
+                    )
                 r = self.model.finetune_loss(states, full_trajs, traj_lens, action_preds, attention_mask,
                                                action_target, old_action_preds, aux=aux_info, update_steps=self.update_steps, dones=dones)
 
